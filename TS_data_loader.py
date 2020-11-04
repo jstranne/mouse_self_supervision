@@ -138,14 +138,26 @@ if __name__=="__main__":
     # training_set=Custom_RP_Dataset(path=data_file, total_points=2000, tpos=120, tneg=300, windowSize=30, sfreq=100)
 
     training_set = torch.utils.data.ConcatDataset(datasets_list)
+    
+    
+    data_len = len(training_set)
+    print("dataset len is", len(training_set))
+
+    train_len = int(data_len*0.8)
+    val_len = data_len - train_len
+    
+    training_set, validation_set = torch.utils.data.random_split(training_set, [train_len, val_len])
+    
+    
 
     print("one dataset is", len(datasets_list[0]))
 
     params = {'batch_size': 256,
               'shuffle': True,
               'num_workers': 6}
-    max_epochs = 10
+    max_epochs = 50
     training_generator = torch.utils.data.DataLoader(training_set, **params)
+    validation_generator = torch.utils.data.DataLoader(validation_set, **params)
 
     print("len of the dataloader is:",len(training_generator))
 
@@ -155,6 +167,11 @@ if __name__=="__main__":
 
     #defining training parameters
     print("Start Training")
+    
+    min_val_loss = float("inf")
+    min_state = None
+    patience = 0
+    
     loss_fn = torch.nn.SoftMarginLoss(reduction='sum')
     learning_rate = 5e-4
     beta_vals = (0.9, 0.999)
@@ -190,12 +207,40 @@ if __name__=="__main__":
             # Calling the step function on an Optimizer makes an update to its
             # parameters
             optimizer.step()
-
             running_loss+=loss.item()
+        
+        
+        model.train=False
+        val_correct=0
+        val_total=0
+        for X1,X2,X3, y in validation_generator:
+            X1, X2, X3, y = X1.to(device), X2.to(device), X3.to(device), y.to(device)
+            y_pred = model(X1, X2, X3)
+            val_correct += num_correct(y_pred,y)
+            val_total += len(y)
+        model.train=True
+        
+        zero_one_val = 1-val_correct/val_total
+        if zero_one_val < min_val_loss:
+            patience = 0
+            min_val_loss = zero_one_val
+            saved_model = model.state_dict()
+        else:
+            patience += 1
+            if patience >= 6:
+                print("EARLY STOPPING")
+                model.load_state_dict(saved_model)
+                stagenet_save_path = os.path.join("models", "TS_stagernet.pth")
+                torch.save(model.stagenet.state_dict(), stagenet_save_path)
+                sys.exit()
+        
+
         print('[Epoch %d] loss: %.3f' %
                           (epoch + 1, running_loss/len(training_generator)))
         print('[Epoch %d] accuracy: %.3f' %
                           (epoch + 1, correct/total))
+        print('[Epoch %d] val 0-1: %.5f' %
+                          (epoch + 1, zero_one_val))
 
 
 

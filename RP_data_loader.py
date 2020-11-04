@@ -150,7 +150,7 @@ if __name__=="__main__":
     params = {'batch_size': 256,
               'shuffle': True,
               'num_workers': 4}
-    max_epochs = 20
+    max_epochs = 40
     training_generator = torch.utils.data.DataLoader(training_set, **params)
 
     print("len of the dataloader is:",len(training_generator))

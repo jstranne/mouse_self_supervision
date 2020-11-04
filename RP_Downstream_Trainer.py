@@ -231,7 +231,7 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
             saved_model = model.state_dict()
         else:
             patience += 1
-            if patience >= 10:
+            if patience >= 6:
                 print("EARLY STOPPING")
                 model.load_state_dict(saved_model)
                 model.train=False
@@ -275,11 +275,11 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
 
 
 if __name__=="__main__":
-    root = os.path.join("..","training", "")
+    root = os.path.join("Mouse_Training_Data", "Windowed_Data", "")
 
     datasets_list=[]
     print('Loading Data')
-    f=open(os.path.join("..","training_names.txt"),'r')
+    f=open(os.path.join("training_names.txt"),'r')
     lines = f.readlines()
     for line in lines:
         recordName=line.strip()
