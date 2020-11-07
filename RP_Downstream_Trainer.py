@@ -141,8 +141,8 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
     
     
     
-    
     train_set_reduced = restrict_training_size_per_class(train_set, pos_labels_per_class, classes)
+
 
     params = {'batch_size': 256,
               'shuffle': True,

@@ -100,9 +100,9 @@ if __name__=="__main__":
 
 
     #we really want 1 channel so we can get the right convolution
-    x = torch.randn(2, 3000)
+    x = torch.randn(2, 1000)
     print(x.size())
-    summary(model, (3000, 2))
+    summary(model, (2000, 2))
     print("test")
 
     # loss_fn = torch.nn.MSELoss(reduction='sum')

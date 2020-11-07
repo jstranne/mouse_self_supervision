@@ -12,13 +12,13 @@ from scipy import stats
 
 def preprocess_file(recordName):
     root = os.path.join("Mouse_Training_Data", "")
-    # returns all channels of the eeg, 30Hz hamming low pass filtered
+    # returns all channels of the eeg, 55Hz low pass filtered
     x = extractWholeRecord(recordName = recordName, dataPath = root)
     y = import_labels(recordName = recordName, dataPath = root)
     print(x.shape)
     print(y.shape)
-    sampling_rate = 100 # in Hz
-    window_size = 30 # in sec
+    sampling_rate = 1000 # in Hz
+    window_size = 3 # in sec
     
     print("Before preprocessing shape is:", x.shape)
     total_windows = len(x)//(sampling_rate*window_size)

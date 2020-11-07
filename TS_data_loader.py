@@ -155,7 +155,7 @@ if __name__=="__main__":
     params = {'batch_size': 256,
               'shuffle': True,
               'num_workers': 6}
-    max_epochs = 50
+    max_epochs = 100
     training_generator = torch.utils.data.DataLoader(training_set, **params)
     validation_generator = torch.utils.data.DataLoader(validation_set, **params)
 

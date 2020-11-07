@@ -76,8 +76,9 @@ def extractWholeRecord(recordName,
     #4th order butterworth
     signals = mne.filter.filter_data(data=signals, sfreq=1000, l_freq=None, h_freq=55, method='fir', fir_window='hamming')    
     
-    ## 1000 -> 100Hz downsample
-    signals = signals[:, 0::10]
+    ## 1000 -> 250Hz downsample
+    # removing the downsample
+    signals = signals[:, 0::1]
 
     garbageCollector.collect()
 
@@ -89,7 +90,7 @@ def import_labels(recordName, dataPath):
     time = load_time(recordName, dataPath + os.sep + "INT_TIME" + os.sep)
     print(time)
     #sampling rate
-    fs=100
+    fs=1000 #removing downsample
     labels=np.zeros(1200*fs)
     labels[time[1]*fs:(2*time[1])*fs] = 1
     labels[2*time[1]*fs:(2*time[1]+time[3])*fs] = 2
@@ -104,7 +105,7 @@ if __name__=="__main__":
     y = import_labels(recordName = "MouseCKA1_030515_HCOFTS", dataPath = root)
     print(len(y))
     
-    print("num0", sum(y==1))
+    print("num0", sum(y==0))
     print("num1", sum(y==1))
     print("num2", sum(y==2))
 

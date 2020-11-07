@@ -16,15 +16,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 import random
 import itertools
-from Custom_data_loader import Custom_RP_Dataset
+from RP_data_loader import Custom_RP_Dataset
+from sklearn.metrics import balanced_accuracy_score
+
 
 class RelPosNet_Downstream(nn.Module):
-    def __init__(self):
+    def __init__(self, channels):
         super(RelPosNet_Downstream, self).__init__()
         # self.conv1 = nn.Conv2d(1, 2, (2,1), stride=(1,1))
 
         #we want 2 filters?
-        self.stagenet=StagerNet()
+        self.stagenet=StagerNet(channels)
         self.linear = nn.Linear(100,1)
         self.linear_downstream = nn.Linear(100,5)
         
@@ -92,27 +94,24 @@ def num_correct_downstream(ypred, ytrue):
     #torch.argmax(a, dim=1)
     return (torch.argmax(ypred, dim=1)==ytrue).float().sum().item()
 
-def reduce_dataset_size(dataset, num_of_each):
-    print(dataset.shape)
-    a = dataset[:, 0]
-    print(a)
 
-
-def smallest_class_len(training_set):
-    indecies=[[],[],[],[],[]]
+def smallest_class_len(training_set, k):
+    indecies=[[] for x in range(k)]
 
     for i in range(len(training_set)):
             # puts in in the list based on the label
+            # print(training_set[i][1].item())
             indecies[training_set[i][1].item()].append(i)
 
     smallest_class = len(indecies[0])
     for num in range(len(indecies)):
+        # print(len(indecies[num]))
         smallest_class=min(smallest_class, len(indecies[num]))
     return smallest_class
 
 
-def restrict_training_size_per_class(training_set, samples_per_class):
-    indecies=[[],[],[],[],[]]
+def restrict_training_size_per_class(training_set, samples_per_class, k):
+    indecies=[[] for x in range(k)]
 
     for i in range(len(training_set)):
             # puts in in the list based on the label
@@ -138,80 +137,57 @@ def restrict_training_size_per_class(training_set, samples_per_class):
 
 
 
-def train_end_to_end_RP_combined(RP_training_generator, training_set, validation_set, pos_labels_per_class, max_epochs, verbose=False):
-#     root = os.path.join("..","training", "")
-
-#     ## Setting up RP
-#     datasets_list=[]
-#     print('Loading Data')
-#     f=open(os.path.join("..","training_names.txt"),'r')
-#     lines = f.readlines()
-#     for line in lines:
-#         recordName=line.strip()
-#         print('Processing', recordName)
-#         data_file=root+recordName+os.sep+recordName
-#         datasets_list.append(Custom_RP_Dataset(path=data_file, total_points=2000, tpos=120, tneg=300, windowSize=30, sfreq=100))
-#     f.close()
-
-#     RP_training_set = torch.utils.data.ConcatDataset(datasets_list)
-
-#     params = {'batch_size': 256,
-#               'shuffle': True,
-#               'num_workers': 6}
-#     RP_training_generator = torch.utils.data.DataLoader(RP_training_set, **params)
+def train_end_to_end_RP_combined(RP_training_generator, RP_validation_generator, train_set, test_set, pos_labels_per_class, max_epochs, classes, verbose=False):
+    
+    gc.collect()
     
     
+    data_len = len(train_set)
+    train_len = int(data_len*0.8)
+    val_len = data_len - train_len
+    train_set, val_set = torch.utils.data.random_split(train_set, [train_len, val_len])
     
-#     ## Set up downstream dataloader
-#     datasets_list=[]
-#     print('Loading Data')
-#     f=open(os.path.join("..","training_names.txt"),'r')
-#     lines = f.readlines()
-#     for line in lines:
-#         recordName=line.strip()
-#         print('Processing', recordName)
-#         data_file=root+recordName+os.sep+recordName
-#         datasets_list.append(Downstream_Dataset(path=data_file))
-#         d = Downstream_Dataset(path=data_file)
-#         print(d.labels.shape)
-#     f.close()
 
-
-#     dataset = torch.utils.data.ConcatDataset(datasets_list)
-#     data_len = len(dataset)
-#     print("dataset len is", len(dataset))
-
-#     train_len = int(data_len*0.6)
-#     val_len = data_len - train_len
-     
-#     training_set, validation_set = torch.utils.data.random_split(dataset, [train_len, val_len])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu") # PyTorch v0.4.0
-    train_set_reduced = restrict_training_size_per_class(training_set, pos_labels_per_class)
+    
+    original_size = len(train_set)
+    train_set_reduced = restrict_training_size_per_class(train_set, pos_labels_per_class, classes)
+    new_size = len(train_set_reduced)
+    
+    downstream_fraction = 1.0*new_size/original_size
+    
     
     # we want to weight the downstream more when we have more data there, so weight with 10*log10(number of each example)+1
     
-    loss_weighting = 1 + np.log10(len(train_set_reduced))*2
+    # loss_weighting = 1 + np.log10(len(train_set_reduced))*2
+    loss_weighting = downstream_fraction
     
-    params = {'batch_size': 256,
+    params = {'batch_size': 128,
               'shuffle': True,
               'num_workers': 6}
+    
+    
     training_generator_downstream = torch.utils.data.DataLoader(train_set_reduced, **params)
-    validation_generator_downstream = torch.utils.data.DataLoader(validation_set, **params)
+    validation_generator_downstream = torch.utils.data.DataLoader(val_set, **params)
+    test_generator_downstream = torch.utils.data.DataLoader(test_set, **params)
+    
     
     
     print("downstream batches:", len(training_generator_downstream))
     print("pretext batches:", len(RP_training_generator))
     
     
-    
-    
-    
-    
-    
-    model = RelPosNet_Downstream().to(device)
+    model = RelPosNet_Downstream(channels=11).to(device)
 
+    
     #defining training parameters
     print("Start Training Full")
+    
+    
+    min_val_loss = float("inf")
+    min_state = None
+    patience = 0
+    
     loss_fn_rp = torch.nn.SoftMarginLoss(reduction='sum')
     loss_fn_downstream = nn.CrossEntropyLoss()
     learning_rate = 5e-4
@@ -219,19 +195,39 @@ def train_end_to_end_RP_combined(RP_training_generator, training_set, validation
     optimizer = torch.optim.Adam(model.parameters(), betas = beta_vals, lr=learning_rate, weight_decay=0.001)
 
     for epoch in range(max_epochs):
+        
+        
+        t = torch.cuda.get_device_properties(0).total_memory
+        c = torch.cuda.memory_cached(0)
+        a = torch.cuda.memory_allocated(0)
+        f = c-a  # free inside cache
+        print(f"Epoch number {epoch} has {f} left")
+
+        
+        
+        
         running_loss = 0
         correct_pretext = 0
         total_pretext = 0
         correct_downstream = 0
         total_downstream = 0
         for i, vals in enumerate(zip(itertools.cycle(training_generator_downstream), RP_training_generator)):
+            
+            if i%100 == 0:
+                t = torch.cuda.get_device_properties(0).total_memory
+                c = torch.cuda.memory_cached(0)
+                a = torch.cuda.memory_allocated(0)
+                f = c-a  # free inside cache
+                print(f"round {i} has {f}")
+
+            
             X1, X2, y = vals[1]
             x_down, y_down = vals[0]
-            #print(X1.shape)
-            #print(y.shape)
-            # Transfer to GPU
+
+            
             X1, X2, y, x_down, y_down = X1.to(device), X2.to(device), y.to(device), x_down.to(device), y_down.to(device)
-            #print(X1.shape)
+
+            
             y_pred_stager, y_pred_downstream = model(X1, X2, x_down)
             loss = loss_fn_rp(y_pred_stager, y) + loss_weighting*loss_fn_downstream(y_pred_downstream, y_down)
             #calculate accuracy
@@ -254,17 +250,39 @@ def train_end_to_end_RP_combined(RP_training_generator, training_set, validation
 
             running_loss+=loss.item()
         
+        gc.collect()
         
-        model.train=False
-        val_correct=0
-        val_total=0
-        temp_val = None
-        for x, y in validation_generator_downstream:
-            x, y = x.to(device), y.to(device)
-            temp_val, y_pred = model(None, None, x)
-            val_correct += num_correct_downstream(y_pred,y)
-            val_total += len(y)
-        model.train=True
+        with torch.no_grad():
+            model.train=False
+            val_loss=0
+            for i, vals in enumerate(zip(itertools.cycle(validation_generator_downstream), RP_validation_generator)):
+                X1, X2, y = vals[1]
+                x_down, y_down = vals[0]
+                X1, X2, y, x_down, y_down = X1.to(device), X2.to(device), y.to(device), x_down.to(device), y_down.to(device)
+                y_pred_stager, y_pred_downstream = model(X1, X2, x_down)   #where eror is happening
+                val_loss += loss_fn_rp(y_pred_stager, y) + loss_weighting*loss_fn_downstream(y_pred_downstream, y_down)
+
+            if val_loss < min_val_loss:
+                patience = 0
+                min_val_loss = val_loss
+                saved_model = model.state_dict()
+            else:
+                patience += 1
+                if patience >= 6:
+                    print("EARLY STOPPING")
+                    model.load_state_dict(saved_model)
+                    model.train=False
+                    test_correct=0
+                    test_total=0
+                    for x, y in test_generator_downstream:
+                        x, y = x.to(device), y.to(device)
+                        y_throwout, y_pred = model(x, x, x)
+                        test_correct += num_correct_downstream(y_pred,y)
+                        test_total += len(y)
+                        test_balanced_acc = balanced_accuracy_score(y.cpu(), torch.argmax(y_pred, dim=1).cpu().data.numpy())*len(y)
+            
+                    return test_correct/test_total, test_balanced_acc/test_total
+            model.train=True
         
         
         if verbose:
@@ -276,7 +294,21 @@ def train_end_to_end_RP_combined(RP_training_generator, training_set, validation
                               (epoch + 1, correct_downstream/total_downstream))
             print('Validation accuracy downstream: %.3f' %
                                   (val_correct/val_total))
-    return val_correct/val_total
+    
+    
+    model.train=False
+    test_correct=0
+    test_total=0
+    for x, y in test_generator_downstream:
+        x, y = x.to(device), y.to(device)
+        y_throwout, y_pred = model(x, x, x)
+        test_correct += num_correct_downstream(y_pred,y)
+        test_total += len(y)
+        test_balanced_acc = balanced_accuracy_score(y.cpu(), torch.argmax(y_pred, dim=1).cpu().data.numpy())*len(y)
+    model.train=True
+    return test_correct/test_total, test_balanced_acc/test_total
+    
+    
         
 
 
@@ -407,7 +439,7 @@ if __name__=="__main__":
         temp_val = None
         for x, y in validation_generator_downstream:
             x, y = x.to(device), y.to(device)
-            temp_val, y_pred = model(None, None, x)
+            temp_val, y_pred = model(x, x, x)
             val_correct += num_correct_downstream(y_pred,y)
             val_total += len(y)
         model.train=True
