@@ -108,30 +108,42 @@ if __name__=="__main__":
 
     datasets_list=[]
     print('Loading Data')
-    f=open(os.path.join("..","training_names.txt"),'r')
+    f=open(os.path.join("training_names.txt"),'r')
     lines = f.readlines()
+    NP_num = 16
     for line in lines:
         recordName=line.strip()
         print('Processing', recordName)
         data_file=root+recordName+os.sep+recordName
-        datasets_list.append(Custom_CPC_Dataset(path=data_file, Nc=20, Np=16, Nb=10))
+        datasets_list.append(Custom_CPC_Dataset(path=data_file, Nc=10, Np=NP_num, Nb=2))
     f.close()
 
-
-
-    # recordName="tr03-0078"
-    # data_file=root+recordName+os.sep+recordName
-    # training_set=Custom_RP_Dataset(path=data_file, total_points=2000, tpos=120, tneg=300, windowSize=30, sfreq=100)
+    
+    model_save_path = f"CPC_stagernet_{NP_num}.pth"
+    
 
     training_set = torch.utils.data.ConcatDataset(datasets_list)
+    
+    data_len = len(training_set)
+    print("dataset len is", len(training_set))
+
+    train_len = int(data_len*0.8)
+    val_len = data_len - train_len
+    
+    training_set, validation_set = torch.utils.data.random_split(training_set, [train_len, val_len])
+    
+    
 
     print("one dataset is", len(datasets_list[0]))
 
     params = {'batch_size': 16,
               'shuffle': True,
               'num_workers': 12}
-    max_epochs = 25
+    
+    max_epochs = 100
+    
     training_generator = torch.utils.data.DataLoader(training_set, **params)
+    validation_generator = torch.utils.data.DataLoader(validation_set, **params)
 
     print("len of the dataloader is:",len(training_generator))
 
@@ -144,21 +156,13 @@ if __name__=="__main__":
     beta_vals = (0.9, 0.999)
     optimizer = torch.optim.Adam(model.parameters(), betas = beta_vals, lr=learning_rate, weight_decay=0.001)
 
-
-
-
-
-    # Xc, Xp, Xb = next(iter(training_generator))
-    # print("XC", Xc.shape)
-    # print("XP", Xp.shape)
-    # print("XB", Xb.shape)
-    # Xc, Xp, Xb = Xc.to(device), Xp.to(device), Xb.to(device)
-
-    # y_pred = model(Xc, Xp, Xb)
-    # print(customLoss(y_pred))
+    min_val_loss = float("inf")
+    min_state = None
+    patience = 0
 
 
     for epoch in range(max_epochs):
+        model.train()
         running_loss=0
         correct=0
         total=0
@@ -190,14 +194,51 @@ if __name__=="__main__":
             optimizer.step()
 
             running_loss+=loss.item()
+            
+            
+        with torch.no_grad():
+            # model.train=False
+            model.eval()
+            val_correct=0
+            val_total=0
+            for Xc, Xp, Xb in validation_generator:
+                Xc, Xp, Xb= Xc.to(device), Xp.to(device), Xb.to(device)
+                #print(X1.shape)
+                y_pred = model(Xc, Xp, Xb)
+                new_correct, new_total = num_correct(y_pred)
+                val_correct += new_correct
+                val_total += new_total
+
+            zero_one_val = 1-val_correct/val_total
+            if zero_one_val < min_val_loss:
+                patience = 0
+                min_val_loss = zero_one_val
+                saved_model = model.state_dict()
+            else:
+                patience += 1
+                if patience >= 6:
+                    print("EARLY STOPPING")
+                    model.load_state_dict(saved_model)
+                    stagenet_save_path = os.path.join("models", model_save_path)
+                    torch.save(model.stagenet.state_dict(), stagenet_save_path)
+                    sys.exit()
+        # model.train=True
+        model.train()
+            
+            
+            
+            
+        
         print('[Epoch %d] loss: %.3f' %
                           (epoch + 1, running_loss/len(training_generator)))
         print('[Epoch %d] accuracy: %.3f' %
                           (epoch + 1, correct/total))
+        print('[Epoch %d] val 0-1: %.5f' %
+                          (epoch + 1, zero_one_val))
 
 
 
 
     print(model.stagenet)
-    stagenet_save_path = os.path.join("models", "CPC_stagernet.pth")
+    stagenet_save_path = os.path.join("models", model_save_path)
     torch.save(model.stagenet.state_dict(), stagenet_save_path)

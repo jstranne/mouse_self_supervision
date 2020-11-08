@@ -13,6 +13,7 @@ parentdir = os.path.dirname(currentdir)
 sys.path.append(parentdir)
 from Temporal_Shuffling import TemporalShufflingNet
 import torch
+import time
 
 
 class Custom_TS_Dataset(torch.utils.data.Dataset):
@@ -125,13 +126,16 @@ if __name__=="__main__":
     print('Loading Data')
     f=open(os.path.join("training_names.txt"),'r')
     lines = f.readlines()
+    tpos_val=120
+    tneg_val=300
     for line in lines:
         recordName=line.strip()
         print('Processing', recordName)
         data_file=root+recordName+os.sep+recordName
-        datasets_list.append(Custom_TS_Dataset(path=data_file, total_points=2000, tpos=120, tneg=300, windowSize=30, sfreq=100))
+        datasets_list.append(Custom_TS_Dataset(path=data_file, total_points=2000, tpos=120, tneg=300, windowSize=3, sfreq=1000))
     f.close()
     
+    model_save_path = f"TS_stagernet_{tpos_val}_{tneg_val}.pth"
 
     # recordName="tr03-0078"
     # data_file=root+recordName+os.sep+recordName
@@ -179,7 +183,11 @@ if __name__=="__main__":
 
     # t_neg=0
     # t_pos=0
+    
+    
     for epoch in range(max_epochs):
+        t0 = time.time()
+        model.train()
         running_loss=0
         correct=0
         total=0
@@ -209,32 +217,32 @@ if __name__=="__main__":
             optimizer.step()
             running_loss+=loss.item()
         
-        
-        model.train=False
-        val_correct=0
-        val_total=0
-        for X1,X2,X3, y in validation_generator:
-            X1, X2, X3, y = X1.to(device), X2.to(device), X3.to(device), y.to(device)
-            y_pred = model(X1, X2, X3)
-            val_correct += num_correct(y_pred,y)
-            val_total += len(y)
-        model.train=True
-        
-        zero_one_val = 1-val_correct/val_total
-        if zero_one_val < min_val_loss:
-            patience = 0
-            min_val_loss = zero_one_val
-            saved_model = model.state_dict()
-        else:
-            patience += 1
-            if patience >= 6:
-                print("EARLY STOPPING")
-                model.load_state_dict(saved_model)
-                stagenet_save_path = os.path.join("models", "TS_stagernet.pth")
-                torch.save(model.stagenet.state_dict(), stagenet_save_path)
-                sys.exit()
-        
+        with torch.no_grad():
+            model.eval()
+            val_correct=0
+            val_total=0
+            for X1,X2,X3, y in validation_generator:
+                X1, X2, X3, y = X1.to(device), X2.to(device), X3.to(device), y.to(device)
+                y_pred = model(X1, X2, X3)
+                val_correct += num_correct(y_pred,y)
+                val_total += len(y)
 
+            zero_one_val = 1-val_correct/val_total
+            if zero_one_val < min_val_loss:
+                patience = 0
+                min_val_loss = zero_one_val
+                saved_model = model.state_dict()
+            else:
+                patience += 1
+                if patience >= 6:
+                    print("EARLY STOPPING")
+                    model.load_state_dict(saved_model)
+                    stagenet_save_path = os.path.join("models", model_save_path)
+                    torch.save(model.stagenet.state_dict(), stagenet_save_path)
+                    sys.exit()
+        model.train()
+        
+        print('{} seconds'.format(time.time() - t0))
         print('[Epoch %d] loss: %.3f' %
                           (epoch + 1, running_loss/len(training_generator)))
         print('[Epoch %d] accuracy: %.3f' %
@@ -246,5 +254,5 @@ if __name__=="__main__":
 
 
     print(model.stagenet)
-    stagenet_save_path = os.path.join("models", "TS_stagernet.pth")
+    stagenet_save_path = os.path.join("models", model_save_path)
     torch.save(model.stagenet.state_dict(), stagenet_save_path)

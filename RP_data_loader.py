@@ -191,6 +191,7 @@ if __name__=="__main__":
     # t_neg=0
     # t_pos=0
     for epoch in range(max_epochs):
+        model.train()
         running_loss=0
         correct=0
         total=0
@@ -221,30 +222,32 @@ if __name__=="__main__":
             running_loss+=loss.item()
             
             
-            
-        model.train=False
-        val_correct=0
-        val_total=0
-        for X1,X2, y in validation_generator:
-            X1, X2, y = X1.to(device), X2.to(device), y.to(device)
-            y_pred = model(X1, X2)
-            val_correct += num_correct(y_pred,y)
-            val_total += len(y)
+        with torch.no_grad():
+            model.train=False
+            model.eval()
+            val_correct=0
+            val_total=0
+            for X1,X2, y in validation_generator:
+                X1, X2, y = X1.to(device), X2.to(device), y.to(device)
+                y_pred = model(X1, X2)
+                val_correct += num_correct(y_pred,y)
+                val_total += len(y)
+
+            zero_one_val = 1-val_correct/val_total
+            if zero_one_val < min_val_loss:
+                patience = 0
+                min_val_loss = zero_one_val
+                saved_model = model.state_dict()
+            else:
+                patience += 1
+                if patience >= 6:
+                    print("EARLY STOPPING")
+                    model.load_state_dict(saved_model)
+                    stagenet_save_path = os.path.join("models", model_save_path)
+                    torch.save(model.stagenet.state_dict(), stagenet_save_path)
+                    sys.exit()
         model.train=True
-        
-        zero_one_val = 1-val_correct/val_total
-        if zero_one_val < min_val_loss:
-            patience = 0
-            min_val_loss = zero_one_val
-            saved_model = model.state_dict()
-        else:
-            patience += 1
-            if patience >= 6:
-                print("EARLY STOPPING")
-                model.load_state_dict(saved_model)
-                stagenet_save_path = os.path.join("models", model_save_path)
-                torch.save(model.stagenet.state_dict(), stagenet_save_path)
-                sys.exit()
+        model.train()
         
         
         

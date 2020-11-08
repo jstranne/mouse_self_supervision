@@ -260,7 +260,7 @@ def train_end_to_end_RP_combined(RP_training_generator, RP_validation_generator,
                 x_down, y_down = vals[0]
                 X1, X2, y, x_down, y_down = X1.to(device), X2.to(device), y.to(device), x_down.to(device), y_down.to(device)
                 y_pred_stager, y_pred_downstream = model(X1, X2, x_down)   #where eror is happening
-                val_loss += loss_fn_rp(y_pred_stager, y) + loss_weighting*loss_fn_downstream(y_pred_downstream, y_down)
+                val_loss += loss_fn_rp(y_pred_stager, y).item() + loss_weighting*loss_fn_downstream(y_pred_downstream, y_down).item()
 
             if val_loss < min_val_loss:
                 patience = 0
