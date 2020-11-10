@@ -19,14 +19,20 @@ import itertools
 from sklearn.metrics import balanced_accuracy_score
 
 
-class DownstreamNet(nn.Module):
-    def __init__(self, trained_stager, classes):
-        super(DownstreamNet, self).__init__()
-        self.stagenet=trained_stager
-        self.linear = nn.Linear(100,classes) # number of labels
+
+class DownstreamNet_Combined(nn.Module):
+    def __init__(self, stager1, stager2, stager3, classes):
+        super(DownstreamNet_Combined, self).__init__()
+        self.stagenet1=stager1
+        self.stagenet2=stager2
+        self.stagenet3=stager3
+        self.linear = nn.Linear(300,classes) # 5 labels
         
     def forward(self, x):
-        x = self.stagenet(x)
+        a = self.stagenet1(x)
+        b = self.stagenet2(x)
+        c = self.stagenet3(x)
+        x = torch.cat((a, b,c), axis=1)
         x = self.linear(x)
         return x
 
@@ -42,9 +48,8 @@ class Downstream_Dataset(torch.utils.data.Dataset):
         unknown=np.where(self.labels<0)
         self.labels=np.delete(self.labels,unknown)
         self.data=np.delete(self.data,unknown, axis=0)
-        # print("labels shape", self.labels.shape)
-        # print(self.labels)
-        # print("data shape", self.data.shape)
+        print("labels shape", self.labels.shape)
+        print("data shape", self.data.shape)
         print("removed", len(unknown[0]), "unknown entries")
         
     def __len__(self):
@@ -91,12 +96,10 @@ def smallest_class_len(training_set, k):
 
     for i in range(len(training_set)):
             # puts in in the list based on the label
-            # print(training_set[i][1].item())
             indecies[training_set[i][1].item()].append(i)
 
     smallest_class = len(indecies[0])
     for num in range(len(indecies)):
-        # print(len(indecies[num]))
         smallest_class=min(smallest_class, len(indecies[num]))
     return smallest_class
 
@@ -128,21 +131,18 @@ def restrict_training_size_per_class(training_set, samples_per_class, k):
 
 
 
-def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, max_epochs, classes, verbose=False):
+def train_end_to_end(rp_path, ts_path, cpc_path, train_set, test_set, pos_labels_per_class, max_epochs, classes, verbose=False):
     
-
     gc.collect()
-    
-    
+        
     data_len = len(train_set)
     train_len = int(data_len*0.8)
     val_len = data_len - train_len
     train_set, val_set = torch.utils.data.random_split(train_set, [train_len, val_len])
     
-    
-    
     train_set_reduced = restrict_training_size_per_class(train_set, pos_labels_per_class, classes)
-
+    
+    
 
     params = {'batch_size': 256,
               'shuffle': True,
@@ -150,24 +150,25 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
     training_generator = torch.utils.data.DataLoader(train_set_reduced, **params)
     validation_generator = torch.utils.data.DataLoader(val_set, **params)
     test_generator = torch.utils.data.DataLoader(test_set, **params)
-
+    
     print("len of the dataloader is:",len(training_generator))
     
-    
-    if stagernet_path == "full_supervision":
-        trained_stage = StagerNet(11)
-    else:    
-        trained_stage = StagerNet(11)
-        if stagernet_path:
-            trained_stage.load_state_dict(torch.load("models"+os.sep+stagernet_path))
-
-        for p in trained_stage.parameters():
+    trained_rp = StagerNet(11)
+    trained_rp.load_state_dict(torch.load("models"+os.sep+rp_path))
+    for p in trained_rp.parameters():
             p.requires_grad = False
-            #print(p)
+    trained_ts = StagerNet(11)
+    trained_ts.load_state_dict(torch.load("models"+os.sep+ts_path))
+    for p in trained_ts.parameters():
+            p.requires_grad = False
+    trained_cpc = StagerNet(11)
+    trained_cpc.load_state_dict(torch.load("models"+os.sep+cpc_path))
+    for p in trained_cpc.parameters():
+            p.requires_grad = False
 
     # cuda setup if allowed
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu") # PyTorch v0.4.0
-    model = DownstreamNet(trained_stage, classes).to(device)
+    model = DownstreamNet_Combined(trained_rp, trained_ts, trained_cpc, classes).to(device)
 
     #defining training parameters
     loss_fn = nn.CrossEntropyLoss()
@@ -182,12 +183,12 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
     patience = 0
 
     for epoch in range(max_epochs):
-        model.train()
         running_loss=0
         correct=0
         total=0
         for x, y in training_generator:
             #print(X1.shape)
+            #print(y.shape)
             # Transfer to GPU
             x, y = x.to(device), y.to(device)
             y_pred = model(x)
@@ -216,7 +217,6 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
 
         with torch.no_grad():
             model.train=False
-            model.eval()
             val_correct=0
             val_total=0
             for x, y in validation_generator:
@@ -248,12 +248,8 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
                         test_balanced_acc = balanced_accuracy_score(y.cpu(), torch.argmax(y_pred, dim=1).cpu().data.numpy())*len(y)
                     model.train=True
                     return test_correct/test_total, test_balanced_acc/test_total
-                
 
-        model.train=True
-        model.train()
         # val_outputs = model()
-        # print(epoch)
         if verbose:
             print('[Epoch %d] Training loss: %.3f' %
                               (epoch + 1, running_loss/len(training_generator)))
@@ -262,7 +258,7 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
 
             print('Validation accuracy: %.3f' %
                               (val_correct/val_total))
-    # return answer at the end
+        
     model.train=False
     test_correct=0
     test_total=0
@@ -274,16 +270,15 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
         test_balanced_acc = balanced_accuracy_score(y.cpu(), torch.argmax(y_pred, dim=1).cpu().data.numpy())*len(y)
     model.train=True
     return test_correct/test_total, test_balanced_acc/test_total
-    #return val_correct/val_total, val_balanced_acc/val_total
 
 
 
 if __name__=="__main__":
-    root = os.path.join("Mouse_Training_Data", "Windowed_Data", "")
+    root = os.path.join("..","training", "")
 
     datasets_list=[]
     print('Loading Data')
-    f=open(os.path.join("training_names.txt"),'r')
+    f=open(os.path.join("..","training_names.txt"),'r')
     lines = f.readlines()
     for line in lines:
         recordName=line.strip()
@@ -304,4 +299,4 @@ if __name__=="__main__":
      
     training_set, validation_set = torch.utils.data.random_split(dataset, [train_len, val_len])
         
-    train_end_to_end("RP_stagernet.pth", training_set, validation_set, 1000, 150)
+    train_end_to_end("RP_stagernet.pth", "TS_stagernet.pth", "CPC_stagernet.pth", training_set, validation_set, 1, 150, verbose=True)
