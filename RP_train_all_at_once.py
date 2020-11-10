@@ -18,6 +18,8 @@ import random
 import itertools
 from RP_data_loader import Custom_RP_Dataset
 from sklearn.metrics import balanced_accuracy_score
+from tqdm import tqdm
+
 
 
 class RelPosNet_Downstream(nn.Module):
@@ -196,12 +198,12 @@ def train_end_to_end_RP_combined(RP_training_generator, RP_validation_generator,
 
     for epoch in range(max_epochs):
         
-        
-        t = torch.cuda.get_device_properties(0).total_memory
-        c = torch.cuda.memory_cached(0)
-        a = torch.cuda.memory_allocated(0)
-        f = c-a  # free inside cache
-        print(f"Epoch number {epoch} has {f} left")
+        model.train()
+#         t = torch.cuda.get_device_properties(0).total_memory
+#         c = torch.cuda.memory_cached(0)
+#         a = torch.cuda.memory_allocated(0)
+#         f = c-a  # free inside cache
+#         print(f"Epoch number {epoch} has {f} left")
 
         
         
@@ -211,14 +213,14 @@ def train_end_to_end_RP_combined(RP_training_generator, RP_validation_generator,
         total_pretext = 0
         correct_downstream = 0
         total_downstream = 0
-        for i, vals in enumerate(zip(itertools.cycle(training_generator_downstream), RP_training_generator)):
+        for i, vals in tqdm(enumerate(zip(itertools.cycle(training_generator_downstream), RP_training_generator))):
             
-            if i%100 == 0:
-                t = torch.cuda.get_device_properties(0).total_memory
-                c = torch.cuda.memory_cached(0)
-                a = torch.cuda.memory_allocated(0)
-                f = c-a  # free inside cache
-                print(f"round {i} has {f}")
+#             if i%100 == 0:
+#                 t = torch.cuda.get_device_properties(0).total_memory
+#                 c = torch.cuda.memory_cached(0)
+#                 a = torch.cuda.memory_allocated(0)
+#                 f = c-a  # free inside cache
+#                 print(f"round {i} has {f}")
 
             
             X1, X2, y = vals[1]
@@ -253,7 +255,8 @@ def train_end_to_end_RP_combined(RP_training_generator, RP_validation_generator,
         gc.collect()
         
         with torch.no_grad():
-            model.train=False
+            #model.train=False
+            model.eval()
             val_loss=0
             for i, vals in enumerate(zip(itertools.cycle(validation_generator_downstream), RP_validation_generator)):
                 X1, X2, y = vals[1]
@@ -282,7 +285,8 @@ def train_end_to_end_RP_combined(RP_training_generator, RP_validation_generator,
                         test_balanced_acc = balanced_accuracy_score(y.cpu(), torch.argmax(y_pred, dim=1).cpu().data.numpy())*len(y)
             
                     return test_correct/test_total, test_balanced_acc/test_total
-            model.train=True
+            #model.train=True
+            model.train()
         
         
         if verbose:

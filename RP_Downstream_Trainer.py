@@ -23,7 +23,7 @@ class DownstreamNet(nn.Module):
     def __init__(self, trained_stager, classes):
         super(DownstreamNet, self).__init__()
         self.stagenet=trained_stager
-        self.linear = nn.Linear(100,3) # 5 labels
+        self.linear = nn.Linear(100,classes) # number of labels
         
     def forward(self, x):
         x = self.stagenet(x)
