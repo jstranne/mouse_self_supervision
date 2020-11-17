@@ -130,7 +130,7 @@ if __name__=="__main__":
     print('Loading Data')
     f=open(os.path.join("training_names.txt"),'r')
     lines = f.readlines()
-    tpos_val=60
+    tpos_val=30
     tneg_val=120
     for line in lines:
         recordName=line.strip()
@@ -223,7 +223,7 @@ if __name__=="__main__":
             
             
         with torch.no_grad():
-            model.train=False
+            #model.train=False
             model.eval()
             val_correct=0
             val_total=0
@@ -246,7 +246,7 @@ if __name__=="__main__":
                     stagenet_save_path = os.path.join("models", model_save_path)
                     torch.save(model.stagenet.state_dict(), stagenet_save_path)
                     sys.exit()
-        model.train=True
+        #model.train=True
         model.train()
         
         

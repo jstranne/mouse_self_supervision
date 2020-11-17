@@ -126,8 +126,8 @@ if __name__=="__main__":
     print('Loading Data')
     f=open(os.path.join("training_names.txt"),'r')
     lines = f.readlines()
-    tpos_val=120
-    tneg_val=300
+    tpos_val=30
+    tneg_val=120
     for line in lines:
         recordName=line.strip()
         print('Processing', recordName)

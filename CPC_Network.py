@@ -16,7 +16,7 @@ class CPC_Net(nn.Module):
         self.gru = nn.GRU(ct_dim, h_dim, 1, batch_first=True)
         self.BilinearList = nn.ModuleList()
         for i in range(Np):
-            self.BilinearList.append(nn.Bilinear(in1_features=h_dim, in2_features=ct_dim, out_features=1, bias=False))
+            self.BilinearList.append(nn.There(in1_features=h_dim, in2_features=ct_dim, out_features=1, bias=False))
         
         
         self.sample_bilin = nn.Bilinear(in1_features=h_dim, in2_features=ct_dim, out_features=1, bias=False)

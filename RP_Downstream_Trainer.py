@@ -215,7 +215,7 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
             running_loss+=loss.item()
 
         with torch.no_grad():
-            model.train=False
+            # model.train=False
             model.eval()
             val_correct=0
             val_total=0
@@ -225,7 +225,7 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
                 val_correct += num_correct(y_pred,y)
                 val_total += len(y)
                 val_balanced_acc = balanced_accuracy_score(y.cpu(), torch.argmax(y_pred, dim=1).cpu().data.numpy())*len(y)
-            model.train=True
+            #model.train=True
 
             zero_one_val = 1-val_correct/val_total
             if zero_one_val < min_val_loss:
@@ -237,7 +237,7 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
                 if patience >= 6:
                     print("EARLY STOPPING")
                     model.load_state_dict(saved_model)
-                    model.train=False
+                    #model.train=False
                     test_correct=0
                     test_total=0
                     for x, y in test_generator:
@@ -246,11 +246,11 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
                         test_correct += num_correct(y_pred,y)
                         test_total += len(y)
                         test_balanced_acc = balanced_accuracy_score(y.cpu(), torch.argmax(y_pred, dim=1).cpu().data.numpy())*len(y)
-                    model.train=True
+                    #model.train=True
                     return test_correct/test_total, test_balanced_acc/test_total
                 
 
-        model.train=True
+        # model.train=True
         model.train()
         # val_outputs = model()
         # print(epoch)
