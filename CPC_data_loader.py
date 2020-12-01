@@ -115,7 +115,7 @@ if __name__=="__main__":
         recordName=line.strip()
         print('Processing', recordName)
         data_file=root+recordName+os.sep+recordName
-        datasets_list.append(Custom_CPC_Dataset(path=data_file, Nc=10, Np=NP_num, Nb=2))
+        datasets_list.append(Custom_CPC_Dataset(path=data_file, Nc=10, Np=NP_num, Nb=4)) #THIS USED TO BE 2 not 4, but 4 would work better
     f.close()
 
     
