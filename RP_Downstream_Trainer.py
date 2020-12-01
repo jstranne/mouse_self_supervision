@@ -20,6 +20,14 @@ from sklearn.metrics import balanced_accuracy_score
 
 
 class DownstreamNet(nn.Module):
+    """
+    Network for the downstream predictor. simply the embedder and a final linear layer
+    
+    param: trained_stager: The trained stagernet model
+    param: classes: Total number of classes to be used
+    
+    returns: A subset of the data with only samples_per_class windows from each class
+    """
     def __init__(self, trained_stager, classes):
         super(DownstreamNet, self).__init__()
         self.stagenet=trained_stager
@@ -60,24 +68,17 @@ class Downstream_Dataset(torch.utils.data.Dataset):
 
     
 def print_class_counts(y_pred):
-#         zero = (torch.argmax(y_pred, dim=1)==0).float().sum()
-#         print("zero", zero)
-#         one = (torch.argmax(y_pred, dim=1)==1).float().sum()
-#         print("one", one)
-#         two = (torch.argmax(y_pred, dim=1)==2).float().sum()
-#         print("two", two)
-#         three = (torch.argmax(y_pred, dim=1)==3).float().sum()
-#         print("three", three)
-#         four = (torch.argmax(y_pred, dim=1)==4).float().sum()
-#         print("four", four)
+    """
+    Prints the total number of items in each class, used for debugging
+    """
     n1 = (torch.argmax(y_pred, dim=1)==-1).float().sum()
     if n1.item() > 0:
         print("There are", n1.item(), "Unknown labels that showed up")
 
 def num_correct(ypred, ytrue):
-    #print(ypred)
-    #print(torch.argmax(ypred, dim=1))
-    #torch.argmax(a, dim=1)
+    """
+    Returns the number of times that ypred is equal to ytrue
+    """
     return (torch.argmax(ypred, dim=1)==ytrue).float().sum().item()
 
 def reduce_dataset_size(dataset, num_of_each):
@@ -87,6 +88,10 @@ def reduce_dataset_size(dataset, num_of_each):
 
 
 def smallest_class_len(training_set, k):
+    """
+    Returns the length of the smalles class. For example, if class 1 had 3000 data points and class 2 had 500, this method 
+    would return 500.
+    """
     indecies=[[] for x in range(k)]
 
     for i in range(len(training_set)):
@@ -102,12 +107,23 @@ def smallest_class_len(training_set, k):
 
 
 def restrict_training_size_per_class(training_set, samples_per_class, k):
+    """
+    Given an input of the training set and a total number of samples per class to keep, return a subset of the training set
+    that only has a given number of samples_per_class left.
+    
+    param: training_set: Data in the training set
+    param: samples_per_class: Number of positive labels per class. If none is provided, then all of the labels will be used.
+    param: k: An integer that determines the total number of possible labels (3 would mean categorical labels 0, 1, and 2)
+    
+    returns: A subset of the data with only samples_per_class windows from each class
+    """
     indecies=[[] for x in range(k)]
 
     for i in range(len(training_set)):
-            # puts in in the list based on the label
+            # puts each index in in the list based on the label that it has
             indecies[training_set[i][1].item()].append(i)
 
+    # find the smallest class length and shuffle up the data of the indecies
     smallest_class = 0
     for num in range(len(indecies)):
         smallest_class=min(smallest_class, len(indecies[num]))
@@ -117,6 +133,7 @@ def restrict_training_size_per_class(training_set, samples_per_class, k):
         smallest_class=min(smallest_class, len(indecies[num]))
         random.shuffle(indecies[num])
 
+    # restrict the indecies to only take the restricted number
     for num in range(len(indecies)):
         indecies[num]=indecies[num][:samples_per_class]
 
@@ -129,6 +146,20 @@ def restrict_training_size_per_class(training_set, samples_per_class, k):
 
 
 def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, max_epochs, classes, verbose=False):
+    """
+    Main method that trains the network end to end. This is meant to use the stagernet path in order to freeze the stagernet embedder, and
+    then train the downstream task by only changing the final layer.
+    
+    param: stagernet_path: string containing a 
+    param: train_set: Data in the training set
+    param: test_set: Data in the test set
+    param: pos_labels_per_class: Number of positive labels per class. If none is provided, then all of the labels will be used.
+    param: max_epochs: An integer representing the maximum epochs that could be used to train
+    param: classes: An integer that determines the total number of possible labels (3 would mean categorical labels 0, 1, and 2)
+    param verbose: A boolean that determines if information for debugging will be printed or not
+    
+    returns: a tuple of the accuracy and balanced accuracy on the test sets
+    """
     
 
     gc.collect()
@@ -181,13 +212,14 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
     min_state = None
     patience = 0
 
-    for epoch in range(max_epochs):
+    for epoch in range(max_epochs): # loop over all epochs
         model.train()
         running_loss=0
         correct=0
         total=0
+        
+        # training loop
         for x, y in training_generator:
-            #print(X1.shape)
             # Transfer to GPU
             x, y = x.to(device), y.to(device)
             y_pred = model(x)
@@ -198,9 +230,7 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
             correct += num_correct(y_pred,y)
             total += len(y)
 
-
             print_class_counts(y_pred)
-
 
             #zero gradients
             optimizer.zero_grad()
@@ -213,7 +243,8 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
             optimizer.step()
 
             running_loss+=loss.item()
-
+        
+        # validation loop
         with torch.no_grad():
             # model.train=False
             model.eval()
@@ -250,10 +281,8 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
                     return test_correct/test_total, test_balanced_acc/test_total
                 
 
-        # model.train=True
+        # print outputs
         model.train()
-        # val_outputs = model()
-        # print(epoch)
         if verbose:
             print('[Epoch %d] Training loss: %.3f' %
                               (epoch + 1, running_loss/len(training_generator)))
@@ -262,6 +291,7 @@ def train_end_to_end(stagernet_path, train_set, test_set, pos_labels_per_class, 
 
             print('Validation accuracy: %.3f' %
                               (val_correct/val_total))
+    
     # return answer at the end
     model.train=False
     test_correct=0

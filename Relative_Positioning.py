@@ -16,8 +16,7 @@ class RelPosNet(nn.Module):
     def forward(self, x1, x2):
         x1 = self.stagenet(x1)
         x2 = self.stagenet(x2)
-        #print('X1', x1.size())
-        #print('X2', x2.size())
+
         
         #the torch.abs() is able to emulate the grp
         x1 = self.linear(torch.abs(x1-x2))

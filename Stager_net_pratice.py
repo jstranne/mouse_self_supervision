@@ -66,32 +66,6 @@ class StagerNet(nn.Module):
 
 
 
-    # BatchNorm2d
-
-
-    # 2D temporal convolution to get C by T by 8
-    #Activation is relu, mode same
-
-    # Maxpool 2D
-
-    # 2D temporal convolution to get C by T by 8
-    # Activation is relu, mode same
-
-    # Maxpool 2D
-
-    #Flatten
-
-    # Dropout
-
-    # dense so output is 5
-
-
-
-    ##################################333333
-    # torch.nn.Linear(D_in, H),
-    # torch.nn.ReLU(),
-    # torch.nn.Linear(H, D_out),
-
 if __name__=="__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu") # PyTorch v0.4.0
     model = StagerNet(2).to(device)

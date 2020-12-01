@@ -43,8 +43,10 @@ class Custom_TS_Dataset(torch.utils.data.Dataset):
         return X1, X2, X3, y
     
     def get_pairs_and_labels(self, size, tpos, tneg, windowSize):
-        # pairs=np.zeros((size,3),dtype=int)
-        #label=np.zeros(size)
+        """
+        Assigns all of the pairs of input and labels for the pretext task. Ones refer to 
+        positive pretext tasks and -1 correcsponds to negative tasks.
+        """
         
         pairs = []
         labels = []
@@ -56,11 +58,11 @@ class Custom_TS_Dataset(torch.utils.data.Dataset):
             
             secondval = self.return_pos_index(index=tempval, tpos=tpos, windowSize=windowSize)
             
-            if(np.abs(self.start_times[tempval]-self.start_times[secondval])>tpos):
+            if(np.abs(self.start_times[tempval]-self.start_times[secondval])>tpos): #checking if we got a bad label
                     print("skipping bad label")
                     continue
             
-            if random.random() < 0.5:
+            if random.random() < 0.5: # randomly a positive or a negative example
                 outval = 1
                 # we need to check if its impossible to return a pos label
                 if(np.abs(secondval-tempval)<=1):
@@ -73,8 +75,8 @@ class Custom_TS_Dataset(torch.utils.data.Dataset):
             else:
                 outval = -1
                 unknown_val = self.return_neg_index(tempval, tneg, windowSize)
-                # print("neg",tempval, secondval)
-                # No need to check for mistakes since we cant return a bad negative window, still check
+
+                # Double check we didnt mess up. If this is printed while executing the script, something is wrong
                 if(np.abs(self.start_times[tempval]-self.start_times[unknown_val])<tneg):
                     print("ERROR, messed up neg label")
                     continue
@@ -92,30 +94,28 @@ class Custom_TS_Dataset(torch.utils.data.Dataset):
         return pairs, labels
     
     def return_pos_index(self, index, tpos, windowSize):
-        # tpos and windowSize in seconds
-        #print("windowsize", windowSize)
-        #print("tpos", tpos)
-        # minimum = max(0,index-(tpos//windowSize))
+        # return a positive example
         maximum = min(len(self.data),index+(tpos//windowSize)+1) #since non inclusive
-        #print("min", minimum)
-        #print("max", maximum)
+
         return np.random.randint(index, maximum)
     
     def return_neg_index(self, index, tneg, windowSize):
+        # return a negative example
+        
         midlow=max(0,index-(tneg//windowSize))
         midhigh =  min(len(self.data)-1,index+(tneg//windowSize))
-        # print("midlow", midlow)
-        # print("midhigh", midhigh)
+
         assert (midlow>0 or midhigh<len(self.data))
         # check if it is even possible to return a negative index
         trial = np.random.randint(0, len(self.data))
         while(trial >= midlow and trial <= midhigh):
-            # keep trying
+            # keep trying until we find one in the correct range
             trial = np.random.randint(0, len(self.data))
         return trial
            
         
 def num_correct(ypred, ytrue):
+    # count the number of times that we predcted the pretext task correctly (signs match means correct)
     return ((ypred* ytrue) > 0).float().sum().item()
 
 if __name__=="__main__":

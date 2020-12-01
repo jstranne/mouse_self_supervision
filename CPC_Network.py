@@ -15,26 +15,20 @@ class CPC_Net(nn.Module):
         ct_dim=100
         self.gru = nn.GRU(ct_dim, h_dim, 1, batch_first=True)
         self.BilinearList = nn.ModuleList()
+        
+        # need a list of bilinear models, one for each Np positions after the context
         for i in range(Np):
-            self.BilinearList.append(nn.There(in1_features=h_dim, in2_features=ct_dim, out_features=1, bias=False))
-        
-        
-        self.sample_bilin = nn.Bilinear(in1_features=h_dim, in2_features=ct_dim, out_features=1, bias=False)
-
-        self.logsoftmax = nn.LogSoftmax()
+            self.BilinearList.append(nn.Bilinear(in1_features=h_dim, in2_features=ct_dim, out_features=1, bias=False))
 
 
     def forward(self, Xc, Xp, Xb_array):
         
         gc.collect()
         
-        #print(Xb_array.shape)
-        #a = torch.empty([32, 16, 10, 100], dtype=Xp.dtype, device=Xp.device)
-#         for batch in range(list(Xb_array.shape)[0]):
-#             for i in range(list(Xb_array.shape)[1]):
-#                 for j in range(list(Xb_array.shape)[2]):
-#                     gc.collect()
-#                     a[:, i, j, :] = self.stagenet(torch.squeeze(Xb_array[:, i, j, :, :]))
+
+        
+        # Some very convoluted reshaping of the inputs. Essentially we need to get a 3d array with the indecies as "batch, entry, predicted value for positve and negative samples"
+        # Where the postive samples are always in  the 0 index of the last dimension of the output
         
         Xb_array = [[self.stagenet(torch.squeeze(Xb_array[:, i, j, :, :])) for i in range(list(Xb_array.shape)[1])] for j in range(list(Xb_array.shape)[2])]         
         for i in range(len(Xb_array)):
@@ -42,7 +36,6 @@ class CPC_Net(nn.Module):
 #         Xb_array = [torch.stack(Xb_array[i]) for i in range(len(Xb_array))]
         Xb_array = torch.stack(Xb_array)
         Xb_array = Xb_array.permute(2, 1, 0, 3) 
-        
         
         Xc = [self.stagenet(torch.squeeze(Xc[:, x, :, :])) for x in range(list(Xc.shape)[1])]
         Xc = torch.stack(Xc)
@@ -52,24 +45,19 @@ class CPC_Net(nn.Module):
         Xp_new = torch.stack(Xp_new)
         Xp_new = Xp_new.permute(1, 0, 2) 
         
-        
         output, hn = self.gru(Xc)
         hn=torch.squeeze(hn)
         Xp_new = Xp_new.unsqueeze(2)
         
-        
         Xp_new = torch.cat((Xp_new, Xb_array), 2)
-        
         
         output_cat = torch.empty([list(Xb_array.shape)[0], 16, 11], dtype=Xp_new.dtype, device=Xp_new.device)
         
         for batch in range(list(Xp_new.shape)[0]):
             for predicted in range(list(Xp_new.shape)[1]):
-                #bilinear = self.BilinearList[predicted]
                 for sample in range(list(Xp_new.shape)[2]):
                     
                     output_cat[batch, predicted, sample] = self.BilinearList[predicted](hn[batch, :], Xp_new[batch, predicted, sample, :])
-        # print(output_cat.shape)
         
         return output_cat
 

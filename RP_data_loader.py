@@ -16,28 +16,6 @@ import torch
 
 
 
-# class Dataset(torch.utils.data.Dataset):
-#   'Characterizes a dataset for PyTorch'
-#   def __init__(self, path, tpos=0, tneg=0):
-#         'Initialization'
-#         xpath=path+"_RPdata.npy"
-#         ypath=path+"_RPlabels.npy"
-#         self.data = np.load(xpath)
-#         self.labels = np.load(ypath)
-
-#   def __len__(self):
-#         'Denotes the total number of samples'
-#         return len(self.labels)
-
-#   def __getitem__(self, index):
-#         'Generates one sample of data'
-#         # Load data and get label
-#         X1 = torch.from_numpy(self.data[index,0,:,:]).float()
-#         X2 = torch.from_numpy(self.data[index,0,:,:]).float()
-#         y = torch.from_numpy(self.labels[index]).float()
-#         return X1, X2, y
-
-
 class Custom_RP_Dataset(torch.utils.data.Dataset):
     #'Characterizes a dataset for PyTorch'
     def __init__(self, path, total_points, tpos, tneg, windowSize, sfreq):
@@ -65,6 +43,11 @@ class Custom_RP_Dataset(torch.utils.data.Dataset):
         return X1, X2, y
     
     def get_pairs_and_labels(self, size, tpos, tneg, windowSize):
+        """
+        Gets the pairs of inputs and output labels for the pretext task. 'Positive' windows are given a label of +1 and 
+        negative windows are provided a label of -1. Read Section 2.2 of https://arxiv.org/pdf/2007.16104.pdf if the terms positive and negative
+        dont make sense.
+        """
         pairs=np.zeros((size,2),dtype=int)
         label=np.zeros(size)
         for i in range(size):
@@ -84,9 +67,7 @@ class Custom_RP_Dataset(torch.utils.data.Dataset):
                 # print("neg",tempval, secondval)
                 # No need to check for mistakes since we cant return a bad negative window, still check
                 if(np.abs(self.start_times[tempval]-self.start_times[secondval])<tneg):
-                    print("ERROR, messed up neg label")
-                
-            
+                    print("ERROR, messed up negative label")
             
             
             pairs[i,0] = tempval
@@ -96,20 +77,23 @@ class Custom_RP_Dataset(torch.utils.data.Dataset):
         return pairs, label
     
     def return_pos_index(self, index, tpos, windowSize):
-        # tpos and windowSize in seconds
-        #print("windowsize", windowSize)
-        #print("tpos", tpos)
+        """
+        returns the index of a random positive window given a starting index
+        """
+        
         minimum = max(0,index-(tpos//windowSize))
         maximum = min(len(self.data),index+(tpos//windowSize)+1) #since non inclusive
-        #print("min", minimum)
-        #print("max", maximum)
+
         return np.random.randint(minimum, maximum)
     
     def return_neg_index(self, index, tneg, windowSize):
+        """
+        returns the index of a random negative window given a starting index
+        """
+        
         midlow=max(0,index-(tneg//windowSize))
         midhigh =  min(len(self.data)-1,index+(tneg//windowSize))
-        # print("midlow", midlow)
-        # print("midhigh", midhigh)
+
         assert (midlow>0 or midhigh<len(self.data))
         # check if it is even possible to return a negative index
         trial = np.random.randint(0, len(self.data))
@@ -120,6 +104,7 @@ class Custom_RP_Dataset(torch.utils.data.Dataset):
            
         
 def num_correct(ypred, ytrue):
+    # return the number of times the pretext rpedictor was correct
     return ((ypred* ytrue) > 0).float().sum().item()
 
 if __name__=="__main__":
@@ -130,37 +115,35 @@ if __name__=="__main__":
     print('Loading Data')
     f=open(os.path.join("training_names.txt"),'r')
     lines = f.readlines()
+    
+    
+    
+    
+    
+    # REMEMBER TO SET TPOS AND TNEG
     tpos_val=30
     tneg_val=120
+    
+    
+    
+    
+    # read in the data and split it
     for line in lines:
         recordName=line.strip()
         print('Processing', recordName)
         data_file=root+recordName+os.sep+recordName
         datasets_list.append(Custom_RP_Dataset(path=data_file, total_points=2000, tpos=tpos_val, tneg=tneg_val, windowSize=3, sfreq=1000))
     f.close()
-    
     model_save_path = f"RP_stagernet_{tpos_val}_{tneg_val}.pth"
-
-
-
-    # recordName="tr03-0078"
-    # data_file=root+recordName+os.sep+recordName
-    # training_set=Custom_RP_Dataset(path=data_file, total_points=2000, tpos=120, tneg=300, windowSize=30, sfreq=100)
-
     training_set = torch.utils.data.ConcatDataset(datasets_list)
-    
-    
     data_len = len(training_set)
     print("dataset len is", len(training_set))
-
     train_len = int(data_len*0.8)
     val_len = data_len - train_len
-    
     training_set, validation_set = torch.utils.data.random_split(training_set, [train_len, val_len])
     
     
 
-    print("one dataset is", len(datasets_list[0]))
 
     params = {'batch_size': 256,
               'shuffle': True,
@@ -180,21 +163,20 @@ if __name__=="__main__":
     
     min_val_loss = float("inf")
     min_state = None
-    patience = 0
-    
-    
+    patience = 0 # this does not actually set the patience, it is a counter for it
     loss_fn = torch.nn.SoftMarginLoss(reduction='sum')
     learning_rate = 5e-4
     beta_vals = (0.9, 0.999)
     optimizer = torch.optim.Adam(model.parameters(), betas = beta_vals, lr=learning_rate, weight_decay=0.001)
 
-    # t_neg=0
-    # t_pos=0
+    # run all epochs
     for epoch in range(max_epochs):
         model.train()
         running_loss=0
         correct=0
         total=0
+        
+        #training loop
         for X1,X2, y in training_generator:
             #print(y.shape)
             # Transfer to GPU
@@ -221,7 +203,7 @@ if __name__=="__main__":
 
             running_loss+=loss.item()
             
-            
+        # validation/testing loop    
         with torch.no_grad():
             #model.train=False
             model.eval()
@@ -250,7 +232,7 @@ if __name__=="__main__":
         model.train()
         
         
-        
+        # print results
         print('[Epoch %d] loss: %.3f' %
                           (epoch + 1, running_loss/len(training_generator)))
         print('[Epoch %d] accuracy: %.3f' %
@@ -260,7 +242,7 @@ if __name__=="__main__":
 
 
 
-
+    # save the results in the models folder
     print(model.stagenet)
     stagenet_save_path = os.path.join("models", model_save_path)
     torch.save(model.stagenet.state_dict(), stagenet_save_path)

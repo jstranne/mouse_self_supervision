@@ -21,6 +21,8 @@ from tqdm import tqdm
 
 class Custom_CPC_Dataset(torch.utils.data.Dataset):
     # 'Characterizes a dataset for PyTorch'
+    # Make sure that you pass in Nc, Np, and NP, section 2.2 of https://arxiv.org/pdf/2007.16104.pdf explains what this is.
+    
     def __init__(self, path, Nc, Np, Nb):
         # 'Initialization'
         datapath = path + "_Windowed_Preprocess.npy"
@@ -62,6 +64,11 @@ class Custom_CPC_Dataset(torch.utils.data.Dataset):
 
 
     def getXc_starts(self, total_points, buffer_needed):
+        """
+        This gets a random list of Xc starting points. We make sure that we have enough buffer so we dont run out of the context windows
+        and the positive sample windows.
+        """
+        
         startList = []
         for i in range(total_points):
             startList.append(np.random.randint(low=0, high=self.total_windows-buffer_needed))
@@ -69,6 +76,9 @@ class Custom_CPC_Dataset(torch.utils.data.Dataset):
 
 
     def generate_negative_sample_list(self, xc_start):
+        """
+        Generates a random sample
+        """
         toReturn = []
         for i in range(self.Nb):
             toReturn.append(self.random_Nb_Sample(xc_start))
@@ -90,6 +100,9 @@ class Custom_CPC_Dataset(torch.utils.data.Dataset):
         return self.data[num, :, :]
           
 def customLoss(input_data):
+    """
+    The custom loss function. Runs a softmax on the first column of the last index using the knowledge that this is where all the positive samples are
+    """
     #input data should be in the shape [batch, np, nb+1]
     # the first index of the nb+1 is the correct one
     lsoft = nn.LogSoftmax(dim=2)
